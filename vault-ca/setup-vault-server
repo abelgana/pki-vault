@@ -1,0 +1,16 @@
+#!/bin/sh -l
+
+# Install curl
+apk add curl
+
+# Install jq
+apk add jq
+
+# Create the folders required
+mkdir -p configs/pki
+mkdir -p configs/policies
+mkdir -p configs/vault_agent
+mkdir -p configs/vault_agent/templates
+mkdir -p configs/nginx
+
+exit 0
