@@ -26,45 +26,49 @@ challenges:
   teaser: Create full CA managed by Vault.
   assignment: |-
     * In this step, you are going to generate a self-signed root certificate using PKI secrets engine.<br>
+      * First, we're going to start a Vault dev server. The dev server is a built-in, pre-configured server that is not very secure but useful for playing with Vault locally. Later in this guide we'll configure and start a real server.
+      ```
+      vault server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200 &
+      ```
       * First, enable the pki secrets engine at the pki path.
       ```
       vault secrets enable pki
       ```
-      * Tune the pki secrets engine to issue certificates with a maximum time-to-live (TTL) of 87600 hours.
+      * Tune the pki secrets engine to issue certificates with a maximum time-to-live (TTL) of 26280 hours.
       ```
-      vault secrets tune -max-lease-ttl=87600h pki
+      vault secrets tune -max-lease-ttl=26280h pki
       ```
       * Generate the root certificate and save the certificate in CA_cert.crt.
       ```
-      vault write -field=certificate pki/root/generate/internal common_name="example.com" \
-        ttl=87600h > configs/pki/CA_cert.crt
+      vault write -field=certificate pki/root/generate/internal common_name="internal.com" \
+        ttl=876h > configs/pki/CA_cert.crt
       ```
       This generates a new self-signed CA certificate and private key. Vault will automatically revoke the generated root at the end of its lease period (TTL); the CA certificate will sign its own Certificate Revocation List (CRL).
       * Configure the CA and CRL URLs.
       ```
       vault write pki/config/urls \
         issuing_certificates="http://127.0.0.1:8200/v1/pki/ca" \
-        crl_distribution_points="http://127.0.0.1:8200/v1/pki/crl
+        crl_distribution_points="http://127.0.0.1:8200/v1/pki/crl"
       ```
     * Now, you are going to create an intermediate CA using the root CA you regenerated in the previous step.
       * First, enable the _pki_ secrets engine at the _pki_int_ path.
       ```
       vault secrets enable -path=pki_int pki
       ```
-      * Tune the _pki_int_ secrets engine to issue certificates with a maximum time-to-live (TTL) of 43800 hours.
+      * Tune the _pki_int_ secrets engine to issue certificates with a maximum time-to-live (TTL) of 8760 hours.
       ```
-      vault secrets tune -max-lease-ttl=43800h pki_int
+      vault secrets tune -max-lease-ttl=8760 pki_int
       ```
       * Execute the following command to generate an intermediate and save the CSR as _pki_intermediate_.csr.
       ```
       vault write -format=json pki_int/intermediate/generate/internal \
-        common_name="example.com Intermediate Authority" \
+        common_name="service.internal.com Intermediate Authority" \
         | jq -r '.data.csr' > pki_intermediate.csr
       ```
       * Sign the intermediate certificate with the root certificate and save the generated certificate as _intermediate.cert.pem_.
       ```
       vault write -format=json pki/root/sign-intermediate csr=@pki_intermediate.csr \
-        format=pem_bundle ttl="43800h" \
+        format=pem_bundle ttl="8760h" \
         | jq -r '.data.certificate' > intermediate.cert.pem
       ```
       * Once the CSR is signed and the root CA returns a certificate, it can be imported back into Vault.
@@ -74,9 +78,9 @@ challenges:
       * Create a role named example-dot-com which allows subdomains.
       ```
       vault write pki_int/roles/example-dot-com \
-        allowed_domains="example.com" \
+        allowed_domains="team1.service.internal.com" \
         allow_subdomains=true \
-        max_ttl="720h"
+        max_ttl="730h"
       ```
   notes:
   - type: text
@@ -88,9 +92,9 @@ challenges:
   tabs:
   - title: Shell
     type: terminal
-    hostname: vault-server
+    hostname: workstation
   difficulty: basic
-  timelimit: 300
+  timelimit: 3000
 - slug: vault-agent
   id: xjwyfmtxxkco
   type: challenge
@@ -123,7 +127,7 @@ challenges:
       }
       EOF
       vault policy write token_update configs/policies/token_update.hcl
-      vault write auth/approle/role/apps policies="token_update
+      vault write auth/approle/role/apps policies="token_update"
       ```
     * Configure Vault agent
       * Get vault agent roleID and secretID
@@ -141,110 +145,39 @@ challenges:
       ```
       cat > configs/vault_agent/templates/ca.ctmpl <<- "EOF"
       {{- /* templates/ca.ctmpl */ -}}
-      {{ with secret "pki_int/issue/example-dot-com" "common_name=vault.example.com" "ttl=5m"}}
+      {{ with secret "pki_int/issue/example-dot-com" "common_name=vault.team1.service.internal.com" "ttl=5m"}}
       {{ .Data.issuing_ca }}{{ end }}
       EOF
-
       cat > configs/vault_agent/templates/cert.ctmpl <<- "EOF"
       {{- /* templates/cert.ctmpl */ -}}
-      {{ with secret "pki_int/issue/example-dot-com" "common_name=vault.domain.com" "ttl=5m"}}
+      {{ with secret "pki_int/issue/example-dot-com" "common_name=vault.team1.service.internal.com" "ttl=5m"}}
       {{ .Data.certificate }}{{ end }}
       EOF
-
       cat > configs/vault_agent/templates/key.ctmpl <<- "EOF"
       {{- /* templates/key.ctmpl */ -}}
-      {{ with secret "pki_int/issue/example-dot-com" "common_name=vault.domain.com" "ttl=5m"}}
+      {{ with secret "pki_int/issue/example-dot-com" "common_name=vault.team1.service.internal.com" "ttl=5m"}}
       {{ .Data.private_key }}{{ end }}
       EOF
       ```
-      * Put the vault-agent Configuration.
+      * The vault-agent configuration can be accessed on the Vault Agent configuration tab. To start the vault agent run:
       ```
-      cat > configs/vault_agent/config.hcl <<- "EOF"
-      pid_file = "./pidfile"
-
-      vault {
-        address = "http://127.0.0.1:8200"
-      }
-
-      auto_auth {
-        method "approle" {
-          mount_path = "auth/approle"
-          config = {
-            role_id_file_path                   = "roleID"
-            secret_id_file_path                 = "secretID"
-            remove_secret_id_file_after_reading = false
-          }
-        }
-
-        sink "file" {
-          config = {
-            path = "approleToken"
-          }
-        }
-      }
-
-      cache {
-        use_auto_auth_token = true
-      }
-
-      listener "tcp" {
-        address     = "127.0.0.1:8100"
-        tls_disable = true
-      }
-
-      template {
-        source      = "templates/cert.ctmpl"
-        destination = "../nginx/ssl/cert.crt"
-        # command     = "docker exec nginx-container nginx -s reload"
-      }
-
-      template {
-        source      = "templates/ca.ctmpl"
-        destination = "../nginx/ssl/ca.crt"
-        # command     = "docker exec nginx-container nginx -s reload"
-      }
-
-      template {
-        source      = "templates/key.ctmpl"
-        destination = "../nginx/ssl/cert.key"
-        # command     = "docker exec nginx-container nginx -s reload"
-      }
-      EOF
+      vault agent -config=/root/configs/vault_agent/config.hcl -log-level=debug &
       ```
     * Configure nginx proxy
+      * The configuration of the Ngnix proxy is on the tab Ngnix Configuration. To start the proxy run:
       ```
-      cat > configs/nginx/nginx.conf <<- "EOF"
-      events {
-        worker_connections 4096; ## Default: 1024
-      }
-      http {
-        server {
-          listen 80;
-          return 301 https://$host$request_uri;
-        }
-        server {
-          listen 443;
-          server_name vault.example.com;
-          ssl_certificate /etc/nginx/ssl/cert.crt;
-          ssl_certificate_key /etc/nginx/ssl/cert.key;
-          ssl on;
-          ssl_session_cache builtin:1000 shared:SSL:10m;
-          ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
-          ssl_ciphers HIGH:!aNULL:!eNULL:!EXPORT:!CAMELLIA:!DES:!MD5:!PSK:!RC4;
-          ssl_prefer_server_ciphers on;
-          access_log /var/log/nginx/vault.access.log;
-          location / {
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-            # Fix the “It appears that your reverse proxy set up is broken" error.
-            proxy_pass http://localhost:8081;
-            proxy_read_timeout 90;
-            proxy_redirect http://localhost:8200 https://vault.example.com;
-          }
-        }
-      }
+      docker run --rm --network=host \
+        --name nginx-container \
+        -v $PWD/configs/nginx:/etc/nginx \
+        -v $PWD/www/data:/www/data -d \
+        nginx
+      ```
+    * Verify that the certificate is automatically updated.
+      ```
+      openssl s_client -showcerts \
+      -connect vault.team1.service.internal.com:443 \
+      2>/dev/null \
+      | openssl x509 -inform pem -noout -text
       ```
   notes:
   - type: text
@@ -252,7 +185,19 @@ challenges:
   tabs:
   - title: Shell
     type: terminal
-    hostname: vault-server
+    hostname: workstation
+  - title: Vault Agent configuration
+    type: code
+    hostname: workstation
+    path: /root/configs/vault_agent
+  - title: Ngnix Configuration
+    type: code
+    hostname: workstation
+    path: /root/configs/nginx
+  - title: Vault UI
+    type: service
+    hostname: workstation
+    port: 8200
   difficulty: basic
-  timelimit: 300
-checksum: "14595250718413676621"
+  timelimit: 3000
+checksum: "13243921663332932710"

@@ -1,0 +1,107 @@
+#!/bin/bash
+
+# Download the required docker images
+docker pull nginx &
+
+
+# Install curl
+apk add curl
+
+# Install jq
+apk add jq
+
+# Create the folders required
+mkdir -p configs/pki
+mkdir -p configs/policies
+mkdir -p configs/vault_agent
+mkdir -p configs/vault_agent/templates
+mkdir -p configs/nginx
+
+cat > configs/vault_agent/config.hcl <<- "EOF"
+pid_file = "./pidfile"
+
+vault {
+  address = "http://127.0.0.1:8200"
+}
+
+auto_auth {
+  method "approle" {
+    mount_path = "auth/approle"
+    config = {
+      role_id_file_path                   = "/root/configs/vault_agent/roleID"
+      secret_id_file_path                 = "/root/configs/vault_agent/secretID"
+      remove_secret_id_file_after_reading = false
+    }
+  }
+
+  sink "file" {
+    config = {
+      path = "/root/configs/vault_agent/approleToken"
+    }
+  }
+}
+
+cache {
+  use_auto_auth_token = true
+}
+
+listener "tcp" {
+  address     = "127.0.0.1:8100"
+  tls_disable = true
+}
+
+template {
+  source      = "/root/configs/vault_agent/templates/cert.ctmpl"
+  destination = "/root/configs/nginx/ssl/cert.crt"
+  command     = "docker exec nginx-container nginx -s reload && echo Ok || echo Failed"
+}
+
+template {
+  source      = "/root/configs/vault_agent/templates/ca.ctmpl"
+  destination = "/root/configs/nginx/ssl/ca.crt"
+  command     = "docker exec nginx-container nginx -s reload && echo Ok || echo Failed"
+}
+
+template {
+  source      = "/root/configs/vault_agent/templates/key.ctmpl"
+  destination = "/root/configs/nginx/ssl/cert.key"
+  command     = "docker exec nginx-container nginx -s reload && echo Ok || echo Failed"
+}
+EOF
+
+cat > configs/nginx/nginx.conf <<- "EOF"
+events {
+  worker_connections 4096; ## Default: 1024
+}
+http {
+  server {
+    listen 80;
+    return 301 https://$host$request_uri;
+  }
+  server {
+    listen 443;
+    server_name vault.team1.service.internal.com;
+    ssl_certificate /etc/nginx/ssl/cert.crt;
+    ssl_certificate_key /etc/nginx/ssl/cert.key;
+    ssl on;
+    ssl_session_cache builtin:1000 shared:SSL:10m;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_ciphers HIGH:!aNULL:!eNULL:!EXPORT:!CAMELLIA:!DES:!MD5:!PSK:!RC4;
+    ssl_prefer_server_ciphers on;
+    access_log /var/log/nginx/vault.access.log;
+    location / {
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+      proxy_pass http://localhost:8200;
+      proxy_read_timeout 90;
+      proxy_redirect http://localhost:8200 https://vault.team1.service.internal.com;
+    }
+  }
+}
+EOF
+
+echo "127.0.0.1 vault.team1.service.internal.com" >> /etc/hosts
+
+exit 0
