@@ -6,7 +6,7 @@ teaser: Learn how to use vault pki backend.
 description: |-
   Learn how to use vault pki backend.
 
-  Certificate renewal is one the challenges that all DevOps engineers face. In this track we will demonstrate how vault pki backend can be used to automate certificate renewal.
+  Certificate renewal is one the challenging tasks that all DevOps engineers face. In this track we will demonstrate how vault pki backend can be used to automate certificate renewal.
 
   Vault agent is going to be used to demonstrate the process of automatically reloading a certificate.
 icon: https://storage.googleapis.com/instruqt-frontend/assets/hashicorp/tracks/vault.png
@@ -25,16 +25,16 @@ challenges:
   title: Vault CA
   teaser: Create full CA managed by Vault.
   assignment: |-
-    * In this step, you are going to generate a self-signed root certificate using PKI secrets engine.<br>
-      * First, we're going to start a Vault dev server. The dev server is a built-in, pre-configured server that is not very secure but useful for playing with Vault locally. Later in this guide we'll configure and start a real server.
+    * In this step, we are going to generate a self-signed root certificate using PKI secrets engine.<br>
+      * Start a Vault dev server. The dev server is a built-in, pre-configured server that is not very secure but useful for playing with Vault locally.
       ```
       vault server -dev -dev-root-token-id=root -dev-listen-address=0.0.0.0:8200 &
       ```
-      * First, enable the pki secrets engine at the pki path.
+      * Enable the pki secrets engine. Multiple PKI engines can be enabled by modifying the path
       ```
-      vault secrets enable pki
+      vault secrets enable -path=pki pki
       ```
-      * Tune the pki secrets engine to issue certificates with a maximum time-to-live (TTL) of 26280 hours.
+      * Tune the pki secrets engine to issue certificates with a maximum time-to-live (TTL) of 26280 hours 3 years.
       ```
       vault secrets tune -max-lease-ttl=26280h pki
       ```
@@ -50,12 +50,12 @@ challenges:
         issuing_certificates="http://127.0.0.1:8200/v1/pki/ca" \
         crl_distribution_points="http://127.0.0.1:8200/v1/pki/crl"
       ```
-    * Now, you are going to create an intermediate CA using the root CA you regenerated in the previous step.
+    * Now, we are going to create an intermediate CA using the root CA we regenerated in the previous step.
       * First, enable the _pki_ secrets engine at the _pki_int_ path.
       ```
       vault secrets enable -path=pki_int pki
       ```
-      * Tune the _pki_int_ secrets engine to issue certificates with a maximum time-to-live (TTL) of 8760 hours.
+      * Tune the _pki_int_ secrets engine to issue certificates with a maximum time-to-live (TTL) of 8760 hours one year in this case.
       ```
       vault secrets tune -max-lease-ttl=8760 pki_int
       ```
@@ -169,8 +169,7 @@ challenges:
       docker run --rm --network=host \
         --name nginx-container \
         -v $PWD/configs/nginx:/etc/nginx \
-        -v $PWD/www/data:/www/data -d \
-        nginx
+        -d nginx
       ```
     * Verify that the certificate is automatically updated.
       ```
@@ -181,7 +180,9 @@ challenges:
       ```
   notes:
   - type: text
-    contents: Replace this text with your own text
+    contents: Vault-agent can be used to automate certificate renewal. This allows
+      operators to write simple templates to acquire certificates and run commands
+      to reload them.
   tabs:
   - title: Shell
     type: terminal
@@ -200,4 +201,4 @@ challenges:
     port: 8200
   difficulty: basic
   timelimit: 3000
-checksum: "13243921663332932710"
+checksum: "10149723556579566793"

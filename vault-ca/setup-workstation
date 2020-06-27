@@ -53,19 +53,19 @@ listener "tcp" {
 template {
   source      = "/root/configs/vault_agent/templates/cert.ctmpl"
   destination = "/root/configs/nginx/ssl/cert.crt"
-  command     = "docker exec nginx-container nginx -s reload && echo Ok || echo Failed"
+  command     = "docker exec nginx-container nginx -s reload 2>&1 && echo Ok || echo Failed"
 }
 
 template {
   source      = "/root/configs/vault_agent/templates/ca.ctmpl"
   destination = "/root/configs/nginx/ssl/ca.crt"
-  command     = "docker exec nginx-container nginx -s reload && echo Ok || echo Failed"
+  command     = "docker exec nginx-container nginx -s reload 2>&1 && echo Ok || echo Failed"
 }
 
 template {
   source      = "/root/configs/vault_agent/templates/key.ctmpl"
   destination = "/root/configs/nginx/ssl/cert.key"
-  command     = "docker exec nginx-container nginx -s reload && echo Ok || echo Failed"
+  command     = "docker exec nginx-container nginx -s reload 2>&1 && echo Ok || echo Failed"
 }
 EOF
 
